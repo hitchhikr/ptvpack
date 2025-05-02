@@ -11,5 +11,5 @@ and the samples can optionally be packed with ADPCM.
 
 It's a command line tool (Windows and Amiga executable packers are provided).
 
-Have fun,
+Have fun,<br>
 h.
