@@ -9,7 +9,7 @@ The patterns structure is optimized to increase compression ratio,
 the converter can split them from samples to generate 2 files
 and the samples can optionally be packed with ADPCM.
 
-It's a command line tool (Windows and Amiga executable packers are provided).
+It's a command line tool (Windows and Amiga versions of the packer are provided).
 
 Have fun,<br>
 h.
