@@ -49,8 +49,8 @@ get_vbr:
 
 ; --------------------------------------------
 ; Replay routine
+                            include "constants.inc"
 ptv_replay:                 include "replay/replay.asm"
-
 
 ; --------------------------------------------
 ; Module

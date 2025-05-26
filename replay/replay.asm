@@ -1,5 +1,5 @@
 ; --------------------------------------------
-; ptvpack v1.2 - Replay routine
+; ptvpack v1.2b - Replay routine
 ; Written by hitchhikr / Neural
 ; Based on the original protracker replay.
 
@@ -104,10 +104,6 @@ MAX_CHANNELS                equ     16
                             opt      o+
                             opt      all+
 
-                        ifnd NO_CONSTANTS
-                            include "constants.inc"
-                        endc
-
 ; --------------------------------------------
 ; Tempo
     ifd PTV_SETSPEED
@@ -171,7 +167,7 @@ ptv_depack_samples:
                             lea     ptv_var(pc),a2
                             lea     ptv_chan1temp-ptv_var(a2),a0
                             lea     $dff40a,a1
-                            lea     ptv_panningTable-ptv_var(a2),a3
+                            lea     ptv_PanningTable-ptv_var(a2),a3
                             moveq   #1,d0
                             ; first 4 channels
                             moveq   #4-1,d1
@@ -279,9 +275,9 @@ ptv_switch_em_off:
     ifd PTV_PACKED_SMP
 ptv_smp_depacker:
                             move.l  d0,d7
-                            lea     ptv_stepsizeTable(pc),a4
+                            lea     ptv_StepSizeTable(pc),a4
                             move.w  (a4),d1
-                            lea     ptv_indexTable(pc),a3
+                            lea     ptv_IndexTable(pc),a3
                             lea     ptv_bufferstep(pc),a2
                             sf.b    (a2)
                             moveq   #0,d0
@@ -593,8 +589,7 @@ ptv_UpdateChannelVolume:
 ptv_SetPeriod:
                             moveq   #0,d1
                             move.b  n_finetune(a6),d1
-                            add.w   d1,d1
-                            move.w  ptv_PeriodTablePtr-ptv_var(a2,d1.w),d1
+                            move.w  ptv_PeriodTablePtr-ptv_var(a2,d1.w*2),d1
                             add.w   n_noteidx(a6),d1
                             move.w  ptv_PeriodTable-ptv_var(a2,d1.w),n_period(a6)
 
@@ -763,8 +758,7 @@ ptv_CheckEfx:
                             and.w   #$fff,d0
                             beq     ptv_PerNop
                             lsr.w   #8,d0
-                            add.w   d0,d0
-                            move.w  ptv_Fx_Table(pc,d0.w),d0
+                            move.w  ptv_Fx_Table(pc,d0.w*2),d0
                             jmp     ptv_Fx_Table(pc,d0.w)
 
 ptv_PerNop:
@@ -795,8 +789,7 @@ ptv_Arpeggio3:
                             move.w  n_period(a6),d2
                             moveq   #0,d0
                             move.b  n_finetune(a6),d0
-                            add.w   d0,d0
-                            move.w  ptv_PeriodTablePtr-ptv_var(a2,d0.w),d0
+                            move.w  ptv_PeriodTablePtr-ptv_var(a2,d0.w*2),d0
                             lea     ptv_PeriodTable-ptv_var(a2,d0.w),a1
                             moveq   #(NOTES_AMOUNT+1)-1,d3
                             moveq   #0,d0
@@ -872,8 +865,7 @@ ptv_SetTonePorta:
                             and.w   #$fff,d2
                             moveq   #0,d0
                             move.b  n_finetune(a6),d0
-                            add.w   d0,d0
-                            move.w  ptv_PeriodTablePtr-ptv_var(a2,d0.w),d0
+                            move.w  ptv_PeriodTablePtr-ptv_var(a2,d0.w*2),d0
                             lea     ptv_PeriodTable-ptv_var(a2,d0.w),a1
                             moveq   #(NOTES_AMOUNT+1)-1,d3
                             moveq   #0,d0
@@ -940,8 +932,7 @@ ptv_TonePortaSetPer:
                             beq     ptv_GlissSkip
                             moveq   #0,d0
                             move.b  n_finetune(a6),d0
-                            add.w   d0,d0
-                            move.w  ptv_PeriodTablePtr-ptv_var(a2,d0.w),d0
+                            move.w  ptv_PeriodTablePtr-ptv_var(a2,d0.w*2),d0
                             lea     ptv_PeriodTable-ptv_var(a2,d0.w),a1
                             moveq   #(NOTES_AMOUNT+1)-1,d3
                             moveq   #0,d0
@@ -1249,8 +1240,7 @@ ptv_CheckMoreEfx:
     endc
                             move.b  n_cmd(a6),d0
                             and.w   #$f,d0
-                            add.w   d0,d0
-                            move.w  ptv_Tick0_Fx_Table(pc,d0.w),d0
+                            move.w  ptv_Tick0_Fx_Table(pc,d0.w*2),d0
                             jmp     ptv_Tick0_Fx_Table(pc,d0.w)
 
     ifd PTV_EXTEND
@@ -1341,8 +1331,7 @@ ptv_E_Commands:
                             move.b  n_cmdlo(a6),d0
                             and.w   #$f0,d0
                             lsr.b   #4,d0
-                            add.w   d0,d0
-                            move.w  ptv_E_Table(pc,d0.w),d0
+                            move.w  ptv_E_Table(pc,d0.w*2),d0
                             jsr     ptv_E_Table(pc,d0.w)
                             move.b  n_volume(a6),n_realvolume(a6)
                             rts
@@ -1419,7 +1408,7 @@ ptv_SetTremoloControl:
 
     ifd PTV_EFX_KARPLUSTRONG
 ptv_KarplusStrong:
-                            movem.l d1-d2/a0-a1,-(sp)
+                            movem.l d1-d2/a0-a1,-(a7)
                             move.l  n_loopstart(a6),a0
                             move.l  a0,a1
                             move.l  n_replen(a6),d0
@@ -1442,7 +1431,7 @@ ptv_KarPLop:
                             add.w   d1,d2
                             asr.w   #1,d2
                             move.b  d2,(a0)
-                            movem.l (sp)+,d1-d2/a0-a1
+                            movem.l (a7)+,d1-d2/a0-a1
                             rts
     endc
 
@@ -1815,7 +1804,7 @@ ptv_PeriodTable_m1:
     endc
 
     ifd PTV_PACKED_SMP
-ptv_stepsizeTable:          dc.w    7,8,9,10,11,12,13,14,16,17
+ptv_StepSizeTable:          dc.w    7,8,9,10,11,12,13,14,16,17
                             dc.w    19,21,23,25,28,31,34,37,41,45
                             dc.w    50,55,60,66,73,80,88,97,107,118
                             dc.w    130,143,157,173,190,209,230,253,279,307
@@ -1825,11 +1814,11 @@ ptv_stepsizeTable:          dc.w    7,8,9,10,11,12,13,14,16,17
                             dc.w    5894,6484,7132,7845,8630,9493,10442,11487,12635,13899
                             dc.w    15289,16818,18500,20350,22385,24623,27086,29794,32767
 
-ptv_indexTable:             dc.w    -1,-1,-1,-1,2,4,6,8
+ptv_IndexTable:             dc.w    -1,-1,-1,-1,2,4,6,8
                             dc.w    -1,-1,-1,-1,2,4,6,8
     endc
 
-ptv_panningTable:           dc.b    $bf,$40,$40,$bf,$bf,$40,$40,$bf
+ptv_PanningTable:           dc.b    $bf,$40,$40,$bf,$bf,$40,$40,$bf
                             dc.b    $bf,$40,$40,$bf,$bf,$40,$40,$bf
                             dc.b    $bf,$40,$40,$bf,$bf,$40,$40,$bf
                             dc.b    $bf,$40,$40,$bf,$bf,$40,$40,$bf

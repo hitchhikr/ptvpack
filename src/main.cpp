@@ -1,5 +1,5 @@
 // -------------------------------------------------
-// ptvpack v1.2
+// ptvpack v1.2b
 // Written by Franck 'hitchhikr' Charlet.
 
 // -------------------------------------------------
@@ -17,7 +17,7 @@ char *Errors_Msg[] =
     "Can't create output file.\n",
     "Can't write into output file.\n",
     "Not enough memory.\n",
-    "Not a noise/star/protracker/fastracker 1 module.\n",
+    "Not a noise/star/protracker/fasttracker 1 module.\n",
 };
 
 #define REF_BLOCK_NOTES 0
@@ -399,7 +399,7 @@ int main(int argc, const char *argv[])
     int Nbr_Channels;
     int pos_args;
 
-    printf("ptvpack v1.2\n");
+    printf("ptvpack v1.2b\n");
     printf("Written by hitchhikr of Neural\n");
 
     memset(Used_Fx, 0, sizeof(Used_Fx));
