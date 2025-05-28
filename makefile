@@ -5,7 +5,7 @@ LIBS =
 
 FLAGS = -fsigned-char -fno-strict-aliasing -Ofast -fno-rtti -fpermissive -Wno-write-strings -Wno-multichar -fno-exceptions
      
-EXEOBJS = main.o packer.o
+EXEOBJS = main.o
 
 all: $(EXENAME)
 

@@ -7,7 +7,7 @@ The (adaptive) replay uses hardware mixing
 
 The patterns structure is optimized to increase compression ratio,
 the converter can split them from samples to generate 2 files
-and the samples can optionally be packed with ADPCM.
+and the samples can optionally be packed in MP3.
 
 It's a command line tool (Windows and Amiga versions of the packer are provided).
 

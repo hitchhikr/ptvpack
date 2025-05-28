@@ -1,5 +1,5 @@
 ; --------------------------------------------
-; ptvpack v1.2b - Replay routine
+; ptvpack v1.3 - Replay routine
 ; Written by hitchhikr / Neural
 ; Based on the original protracker replay.
 
@@ -97,6 +97,29 @@ ciaicr                      equ     $d00
 ciacra                      equ     $e00
 ciacrb                      equ     $f00
 
+MODE_NEWFILE                equ     1006
+
+_LVOAllocMem                equ     -198
+_LVOFreeMem                 equ     -210
+_LVOOldOpenLibrary          equ     -408
+_LVOCloseLibrary            equ     -414
+
+_LVOOpen                    equ     -30
+_LVOClose                   equ     -36
+_LVOWrite                   equ     -48
+_LVODeleteFile              equ     -72
+
+MPEGA_MAX_CHANNELS          equ     2
+MPEGA_PCM_SIZE              equ     (1152*2)
+
+_LVOMPEGA_open              equ     -30
+_LVOMPEGA_close             equ     -36
+_LVOMPEGA_decode_frame      equ     -42
+_LVOMPEGA_seek              equ     -48
+_LVOMPEGA_time              equ     -54
+_LVOMPEGA_find_sync         equ     -60
+_LVOMPEGA_scale             equ     -66
+
 NOTES_AMOUNT                equ     (5*12)
 MAX_CHANNELS                equ     16
 
@@ -127,6 +150,26 @@ ptv_set_tempo:
 ptv_init:
                             movem.l d0-a6,-(a7)
                             lea     ptv_var(pc),a2
+    ifd PTV_PACKED_SMP
+                            movem.l d0/a0/a1,-(a7)
+                            move.l  4.w,a6
+                            lea     dosname(pc),a1
+                            jsr     _LVOOldOpenLibrary(a6)
+                            move.l  d0,dosbase-ptv_var(a2)
+                            lea     mpeganame(pc),a1
+                            jsr     _LVOOldOpenLibrary(a6)
+                            move.l  d0,mpegabase-ptv_var(a2)
+                            ; temporary frames buffer
+                            move.l  #MPEGA_PCM_SIZE,d0
+                            move.l  #$10000,d1
+                            jsr     _LVOAllocMem(a6)
+                            move.l  d0,pcm_buffers-ptv_var(a2)
+                            move.l  #MPEGA_PCM_SIZE,d0
+                            move.l  #$10000,d1
+                            jsr     _LVOAllocMem(a6)
+                            move.l  d0,pcm_buffers+4-ptv_var(a2)
+                            movem.l (a7)+,d0/a0/a1
+    endc
                             move.w  (a0)+,ptv_channels-ptv_var(a2)
                             move.l  a0,ptv_SongDataPtr-ptv_var(a2)
                             add.l   #$78,d0                     ; vbr + $78
@@ -136,7 +179,9 @@ ptv_init:
                             ; Depack the samples
                             moveq   #0,d7
                             move.b  12(a0),d7                   ; amount of samples (-1)
+                            move.w  d7,ptv_samples-ptv_var(a2)
                             lea     22(a0),a6                   ; samples lengths
+                            move.l  a6,ptv_sampleslen-ptv_var(a2)
                             move.l  a1,d0                       ; do we use a separate samples file ?
                             beq     ptv_no_smp_file
                             move.l  d0,a0
@@ -146,22 +191,99 @@ ptv_no_smp_file:
 ptv_process_samples:
                             lea     ptv_SampleStarts-ptv_var(a2),a4
 ptv_depack_samples:
-                            moveq   #0,d1
-                            move.l  (a6),d1
-                            move.l  a0,(a4)+                    ; store sample address
 
     ifd PTV_PACKED_SMP
-                            movem.l d1/d7/a0/a4/a6,-(a7)
-                            lea     (a0),a1                     ; unpacked dest
-                            move.l  d1,d0
-                            add.l   d0,d0
-                            lea     (a1,d1.l),a0                ; packed source
-                            bsr     ptv_smp_depacker
-                            movem.l (a7)+,d1/d7/a0/a4/a6
-    endc
-
+                            ; packed length
+                            move.l  (a0)+,d0
+                            movem.l d0/d1/d7/a0/a1/a2/a3/a4/a5/a6,-(a7)
+                            movem.l d0/a0,-(a7)
+                            move.l  (a6),d0
+                            lsl.l   #4,d0
+                            move.l  4.w,a6
+                            move.l  #$10002,d1
+                            jsr     _LVOAllocMem(a6)
+                            move.l  d0,(a4)                     ; store new sample address
+                            move.l  d0,a3                       ; a5 = unpacked dest
+                            ; save the sample data into RAM:
+                            move.l  dosbase(pc),a6
+                            lea     smpname(pc),a0
+                            move.l  a0,d1
+                            move.l  #MODE_NEWFILE,d2
+                            jsr     _LVOOpen(a6)
+                            move.l  d0,a4
+                            ; file handle
+                            move.l  d0,d1
+                            beq     .no_file
+                            movem.l (a7),d0/a0
+                            ; a0 = source
+                            move.l  a0,d2
+                            move.l  d0,d3
+                            jsr     _LVOWrite(a6)
+                            move.l  a4,d1
+                            jsr     _LVOClose(a6)
+.no_file:
+                            movem.l (a7)+,d0/a0
+                            move.l  a3,-(a7)
+                            move.l  a3,-(a7)
+                            lea     smpname(pc),a0
+                            lea     mpa_ctrl(pc),a1
+                            move.l  mpegabase(pc),a6
+                            jsr     _LVOMPEGA_open(a6)
+                            ; ; a4 = stream
+                            lea     mp3stream(pc),a0
+                            move.l  d0,(a0)
+                            tst.l   d0
+                            beq     .no_stream
+                            moveq   #0,d7
+.decode_frames:
+                            move.l  mp3stream(pc),a0
+                            lea     pcm_buffers(pc),a1
+                            move.l  mpegabase(pc),a6
+                            jsr     _LVOMPEGA_decode_frame(a6)
+                            tst.l   d0
+                            bmi     .stop_decode
+                            beq     .no_frame
+                            ; copy into destination buffer
+                            ; a3 = sample dest
+                            move.l  (a7),a3
+                            move.l  pcm_buffers(pc),a1
+.copy_frame:
+                            move.w  (a1)+,(a3)
+                            ; don't record those
+                            cmp.l   #1105,d7
+                            blt     .no_write
+                            addq.l  #2,a3
+.no_write:
+                            addq.l  #1,d7
+                            subq.l  #1,d0
+                            bne     .copy_frame
+                            move.l  a3,(a7)
+.no_frame:
+                            bra     .decode_frames
+.stop_decode:
+                            ; close the stream
+                            move.l  mp3stream(pc),a0
+                            move.l  mpegabase(pc),a6
+                            jsr     _LVOMPEGA_close(a6)
+                            ; delete the file from the RAM:
+                            move.l  dosbase(pc),a6
+                            lea     smpname(pc),a0
+                            move.l  a0,d1
+                            jsr     _LVODeleteFile(a6)
+.no_stream:
+                            move.l  (a7)+,a3
+                            move.l  (a7)+,a3
+                            clr.l   (a3)
+                            movem.l (a7)+,d0/d1/d7/a0/a1/a2/a3/a4/a5/a6
+                            addq.l  #4,a4
+                            lea     (a0,d0.l),a0                ; next sample
+    else
+                            ; dest length / 2
+                            move.l  a0,(a4)+                    ; store sample address
+                            move.l  (a6),d1
                             add.l   d1,d1                       ; real sample length
                             lea     (a0,d1.l),a0                ; next sample
+    endc
                             lea     16(a6),a6
                             dbf     d7,ptv_depack_samples
                             lea     ptv_var(pc),a2
@@ -179,8 +301,13 @@ ptv_set_channels_dmabitslo:
                             move.w  d3,n_panningleft(a0)
                             move.b  1(a3,d2.w),d3
                             move.w  d3,n_panningright(a0)
+    ifd PTV_PACKED_SMP
+                            ; AUDxCTRL (16 bit sample)
+                            move.w  #1,(a1)
+    else
                             ; AUDxCTRL
                             clr.w   (a1)
+    endc
                             lea     n_sizeof(a0),a0
                             lea     $10(a1),a1
                             add.w   d0,d0
@@ -196,8 +323,13 @@ ptv_set_channels_dmabitshi:
                             move.w  d3,n_panningleft(a0)
                             move.b  1(a3,d2.w),d3
                             move.w  d3,n_panningright(a0)
+    ifd PTV_PACKED_SMP
+                            ; AUDxCTRL (16 bit sample)
+                            move.w  #1,(a1)
+    else
                             ; AUDxCTRL
                             clr.w   (a1)
+    endc
                             lea     n_sizeof(a0),a0
                             lea     $10(a1),a1
                             add.w   d0,d0
@@ -218,7 +350,7 @@ ptv_set_channels_dmabitshi:
                             move.b  ciatahi(a3),(a1)+
                             move.b  ciatblo(a3),(a1)+
                             move.b  ciatbhi(a3),(a1)+
-                            bsr     ptv_end
+                            bsr     ptv_stop
                             lea     ptv_repeat_interrupt-ptv_var(a2),a0
                             move.l  a0,ptv_repeat_irq-ptv_var(a2)
                             move.l  #1773447,d0                 ; default to normal 50 Hz timer
@@ -241,7 +373,38 @@ ptv_set_channels_dmabitshi:
 ; --------------------------------------------
 ; Stop replay
 ptv_end:
-                            movem.l d0/d1/a0/a1,-(a7)
+                            movem.l d0/d1/a0/a1/a2/a3/a6,-(a7)
+                            bsr     ptv_stop
+    ifd PTV_PACKED_SMP
+                            move.l  4.w,a6
+                            ; free the samples
+                            move.w  ptv_samples(pc),d7
+                            lea     ptv_SampleStarts(pc),a2
+                            move.l  ptv_sampleslen(pc),a3
+.free_samples:
+                            move.l  (a2)+,a1
+                            move.l  (a3),d0
+                            lsl.l   #4,d0
+                            jsr     _LVOFreeMem(a6)
+                            lea     16(a3),a3
+                            dbf     d7,.free_samples
+                            move.l  #MPEGA_PCM_SIZE,d0
+                            move.l  pcm_buffers+4(pc),a1
+                            jsr     _LVOFreeMem(a6)
+                            move.l  #MPEGA_PCM_SIZE,d0
+                            move.l  pcm_buffers(pc),a1
+                            jsr     _LVOFreeMem(a6)
+                            move.l  mpegabase(pc),a1
+                            jsr     _LVOCloseLibrary(a6)
+                            move.l  dosbase(pc),a1
+                            jsr     _LVOCloseLibrary(a6)
+    endc
+                            movem.l (a7)+,d0/d1/a0/a1/a2/a3/a6
+                            rts
+ptv_stop:
+                            movem.l d0/d1/a0/a1/a6,-(a7)
+                            lea     ptv_Enable(pc),a0
+                            sf.b    (a0)
                             lea     $dff000,a0
                             move.w  #$4000,$9a(a0)
                             move.l  ptv_vbr(pc),a0
@@ -254,109 +417,19 @@ ptv_end:
                             move.b  (a1)+,ciatbhi(a0)
                             move.b  #$10,ciacra(a0)
                             move.b  #$10,ciacrb(a0)
-                            lea     ptv_Enable(pc),a0
-                            sf.b    (a0)
                             lea     $dff000,a0
                             move.w  #$f,$96(a0)
                             move.w  #$fff,$296(a0)
                             moveq   #0,d0
                             moveq   #0,d1
-ptv_switch_em_off:
+.ptv_switch_em_off:
                             move.w  d0,$408(a0)
                             lea     $10(a0),a0
                             addq.w  #1,d1
                             cmp.w   ptv_channels(pc),d1
-                            bne     ptv_switch_em_off
-                            movem.l (a7)+,d0/d1/a0/a1
+                            bne     .ptv_switch_em_off
+                            movem.l (a7)+,d0/d1/a0/a1/a6
                             rts
-
-; --------------------------------------------
-; Depack a sample
-    ifd PTV_PACKED_SMP
-ptv_smp_depacker:
-                            move.l  d0,d7
-                            lea     ptv_StepSizeTable(pc),a4
-                            move.w  (a4),d1
-                            lea     ptv_IndexTable(pc),a3
-                            lea     ptv_bufferstep(pc),a2
-                            sf.b    (a2)
-                            moveq   #0,d0
-                            moveq   #0,d6
-                            moveq   #0,d3
-                            moveq   #0,d4
-                            move.l  d4,a5
-ptv_depack_sample:
-                            tst.b   (a2)
-                            beq     ptv_load_new_byte
-                            move.b  d2,d3
-                            and.b   #$f,d3
-                            bra     ptv_no_smp_new_byte
-ptv_load_new_byte:
-                            move.b  (a0)+,d2
-                            move.b  d2,d3
-                            lsr.b   #4,d3
-ptv_no_smp_new_byte:
-                            not.b   (a2)
-                            move.w  d3,d6
-                            add.w   d6,d6
-                            add.w   (a3,d6.w),d4
-                            bge     ptv_min_index
-                            clr.w   d4
-ptv_min_index:
-                            cmp.w   #88,d4
-                            ble     ptv_max_index
-                            moveq   #88,d4
-ptv_max_index:
-                            move.b  d3,d5
-                            and.b   #8,d5
-                            and.b   #7,d3
-                            move.w  d1,d0
-                            asr.w   #3,d0
-                            move.b  d3,d6
-                            and.b   #4,d6
-                            beq     ptv_delta_1
-                            add.w   d1,d0
-ptv_delta_1:
-                            move.b  d3,d6
-                            and.b   #2,d6
-                            beq     ptv_delta_2
-                            move.w  d1,d6
-                            asr.w   #1,d6
-                            add.w   d6,d0
-ptv_delta_2:
-                            move.b  d3,d6
-                            and.b   #1,d6
-                            beq     ptv_delta_3
-                            move.w  d1,d6
-                            asr.w   #2,d6
-                            add.w   d6,d0
-ptv_delta_3:
-                            tst.b   d5
-                            beq     ptv_set_sign
-                            sub.l   d0,a5
-                            bra     ptv_no_sign
-ptv_set_sign:
-                            add.l   d0,a5
-ptv_no_sign:
-                            move.w  d4,d6
-                            add.w   d6,d6
-                            move.w  (a4,d6.w),d1
-                            move.l  a5,d6
-                            cmp.l   #32767,d6
-                            ble     ptv_max_clamp
-                            move.l  #32767,d6
-ptv_max_clamp:
-                            cmp.l   #-32767,d6
-                            bge     ptv_min_clamp
-                            move.l  #-32767,d6
-ptv_min_clamp:
-                            move.l  d6,a5
-                            asr.w   #8,d6
-                            move.b  d6,(a1)+
-                            subq.l  #1,d7
-                            bne     ptv_depack_sample
-                            rts
-    endc
 
 ; --------------------------------------------
 ; Interrupts
@@ -514,11 +587,14 @@ ptv_plvskip:
                             move.b  4(a3,d0.w),n_finetune(a6)
                             move.b  5(a3,d0.w),n_volume(a6)
                             move.l  n_start(a6),d2              ; get start
-                            movem.l 6(a3,d0.w),d0/d1            ; get repeat & replen
+                            movem.l 6(a3,d0.w),d0/d1            ; get repeat start & replen
                             move.l  d1,n_replen(a6)             ; save replen
                             tst.l   d0
                             beq     ptv_NoLoop
                             move.l  d0,d3
+    ifd PTV_PACKED_SMP
+                            add.l   d3,d3
+    endc
                             add.l   d3,d3
                             add.l   d3,d2                       ; add repeat
                             add.l   d1,d0                       ; add replen
@@ -1172,7 +1248,7 @@ ptv_PatternBreak:
 ptv_SetSpeed:
                             moveq   #0,d0
                             move.b  n_cmdlo(a6),d0
-                            beq     ptv_end
+                            beq     ptv_stop
                             cmp.b   #32,d0
                             bhs     ptv_set_tempo
                             sf.b    ptv_counter-ptv_var(a2)
@@ -1803,32 +1879,44 @@ ptv_PeriodTable_m1:
                             dc.w     216, 203, 192, 181, 171, 161, 152, 144, 136, 128, 121, 114
     endc
 
+; left/right volumes
+ptv_PanningTable:           dc.b    $af,$50,$50,$af,$af,$50,$50,$af
+                            dc.b    $af,$50,$50,$af,$af,$50,$50,$af
+                            dc.b    $af,$50,$50,$af,$af,$50,$50,$af
+                            dc.b    $af,$50,$50,$af,$af,$50,$50,$af
+
     ifd PTV_PACKED_SMP
-ptv_StepSizeTable:          dc.w    7,8,9,10,11,12,13,14,16,17
-                            dc.w    19,21,23,25,28,31,34,37,41,45
-                            dc.w    50,55,60,66,73,80,88,97,107,118
-                            dc.w    130,143,157,173,190,209,230,253,279,307
-                            dc.w    337,371,408,449,494,544,598,658,724,796
-                            dc.w    876,963,1060,1166,1282,1411,1552,1707,1878,2066
-                            dc.w    2272,2499,2749,3024,3327,3660,4026,4428,4871,5358
-                            dc.w    5894,6484,7132,7845,8630,9493,10442,11487,12635,13899
-                            dc.w    15289,16818,18500,20350,22385,24623,27086,29794,32767
-
-ptv_IndexTable:             dc.w    -1,-1,-1,-1,2,4,6,8
-                            dc.w    -1,-1,-1,-1,2,4,6,8
+mpegabase:                  dc.l    0
+dosbase:                    dc.l    0
+mp3stream:                  dc.l    0
+pcm_buffers:                dc.l    0,0
+mpa_ctrl:                   dc.l    0
+                            dc.w    0
+                            dc.w    1,2
+                            dc.l    44100
+                            dc.w    1,2
+                            dc.l    44100
+                            dc.w    0
+                            dc.w    1,2
+                            dc.l    44100
+                            dc.w    1,2
+                            dc.l    44100
+                            dc.w    0
+                            dc.l    0
+mpeganame:                  dc.b    "mpega.library",0
+dosname:                    dc.b    "dos.library",0
+smpname:                    dc.b    "RAM:smp",0
+                            even
     endc
-
-ptv_PanningTable:           dc.b    $bf,$40,$40,$bf,$bf,$40,$40,$bf
-                            dc.b    $bf,$40,$40,$bf,$bf,$40,$40,$bf
-                            dc.b    $bf,$40,$40,$bf,$bf,$40,$40,$bf
-                            dc.b    $bf,$40,$40,$bf,$bf,$40,$40,$bf
 
 ptv_chan1temp:              dcb.b   n_sizeof*MAX_CHANNELS,0
 ptv_bufferstep:             dc.l    0
 ptv_patternssize:           dc.l    0
 ptv_chunksize:              dc.l    0
 ptv_SongDataPtr:            dc.l    0
+ptv_sampleslen:             dc.l    0
 ptv_channels:               dc.w    0
+ptv_samples:                dc.w    0
 ptv_synchro:                dc.b    0
 ptv_speed:                  dc.b    0
 ptv_counter:                dc.b    0

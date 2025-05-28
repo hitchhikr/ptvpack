@@ -20,8 +20,8 @@ start:                      move.w  $dff01c,-(a7)
                             move.l  4.w,a6
                             lea     get_vbr(pc),a5
                             jsr     _LVOSupervisor(a6)
+                            move.w  #$0020,$dff09a
                             ; d0 = vbr
-                            move.w  #$4020,$dff09a
                             lea     ptv_data,a0
                             sub.l   a1,a1               ; possible separate .smp file
                             bsr     ptv_init

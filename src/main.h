@@ -21,7 +21,7 @@ typedef struct
 {
     FILE *Output_PTV;
     FILE *Output_SMP;
-    int Pos_In_Datas;
+    int Pos_In_Data;
     BYTE *Input_Mem;
     int Input_Size;
     int Nbr_Files;
@@ -29,7 +29,7 @@ typedef struct
 
 // -------------------------------------------------
 // Constants
-#define MAX_PATH 262
+#define MAX_PATH 256
 #define FALSE 0
 #define TRUE 1
 

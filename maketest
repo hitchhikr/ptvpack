@@ -1,0 +1,2 @@
+tools/vasm -nomsg=2050 -nomsg=2054 -nomsg=2052 -Fhunk -quiet -devpac -o test.o test.asm
+tools/vlink -S -s -o test test.o

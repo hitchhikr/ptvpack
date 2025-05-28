@@ -1,13 +1,16 @@
 // -------------------------------------------------
-// ptvpack v1.2b
+// ptvpack v1.3
 // Written by Franck 'hitchhikr' Charlet.
 
 // -------------------------------------------------
 // Includes
 #include "main.h"
-#include "packer.h"
 
-//#define HOST_BIG_ENDIAN
+#ifdef HOST_BIG_ENDIAN
+#define SEPARATOR "/"
+#else
+#define SEPARATOR "\\"
+#endif
 
 // -------------------------------------------------
 // Errors table
@@ -17,13 +20,13 @@ char *Errors_Msg[] =
     "Can't create output file.\n",
     "Can't write into output file.\n",
     "Not enough memory.\n",
-    "Not a noise/star/protracker/fasttracker 1 module.\n",
+    "Not a noise/protracker/fasttracker 1 module.\n",
 };
 
 #define REF_BLOCK_NOTES 0
 #define REF_BLOCK_INSTR 1
 #define REF_BLOCK_FX 2
-#define REF_BLOCK_DATAS 3
+#define REF_BLOCK_Data 3
 
 // -------------------------------------------------
 // Structures
@@ -35,7 +38,7 @@ typedef struct
     int Volume;
     int Repeat_Start;
     int Repeat_Length;
-    char *Datas;
+    char *Data;
 } SAMPLE_INFOS, *LPSAMPLE_INFOS;
 
 typedef struct
@@ -57,7 +60,7 @@ typedef struct
 
 typedef struct
 {
-    BYTE Datas[16];
+    BYTE Data[16];
 } DAT_BLOCK, *LPDAT_BLOCK;
 
 // -------------------------------------------------
@@ -66,7 +69,7 @@ FILE *Input;
 FNC_TABLE Serv;
 BYTE Sample_Name[22];
 LPTRACKS Patterns = NULL;
-int Nbr_Patterns;
+int Compression_Kbps;
 char Dest_FileName[MAX_PATH];
 char Dest_FileName_Smp[MAX_PATH];
 
@@ -92,27 +95,6 @@ unsigned int mt_tags[] =
     '13CH', '14CH', '15CH', '16CH'
 };
 
-// ------------------------------------------------------
-// Load a file into a memory block
-BYTE *Load_Input_File(char *FileName, DWORD *Size)
-{
-    BYTE *Memory;
-    FILE *Input = fopen(FileName, "rb");
-    
-    if(!Input) return(NULL);
-    // Get the filesize
-    fseek(Input, 0, SEEK_END);
-    *Size = ftell(Input);
-    fseek(Input, 0, SEEK_SET);
-    
-    Memory = (BYTE *) malloc(*Size);
-    if(!Memory) return(NULL);
-    if(fread(Memory, 1, *Size, Input) != (size_t) *Size) return(NULL);
-    if(Input) fclose(Input);
-    Input = NULL;
-    return(Memory);
-}
-
 // -------------------------------------------------
 // Display an error message
 void Print_Error(int Err_Number)
@@ -123,12 +105,12 @@ void Print_Error(int Err_Number)
 
 // -------------------------------------------------
 // Free allocated memory & close opened files
-void Free_Stuff(int split_samples)
+void Free_Stuff(int Split_Samples)
 {
     if(Serv.Input_Mem) free(Serv.Input_Mem);
     if(Input) fclose(Input);
     if(Serv.Output_PTV) fclose(Serv.Output_PTV);
-    if(split_samples) if(Serv.Output_SMP) fclose(Serv.Output_SMP);
+    if(Split_Samples) if(Serv.Output_SMP) fclose(Serv.Output_SMP);
 }
 
 // -----------------------------------------------------------------------
@@ -165,7 +147,7 @@ int File_Exist(char *Filename)
 // Load the Future composer file into memory
 int Load_Input_File(char *FileName)
 {
-    Serv.Pos_In_Datas = 0;
+    Serv.Pos_In_Data = 0;
     
     Input = fopen(FileName, "rb");
     if(!Input)
@@ -189,71 +171,84 @@ int Load_Input_File(char *FileName)
         Print_Error(ERR_LOADFILE);
         return(FALSE);
     }
-    if(Input) fclose(Input);
-    Input = NULL;
-
     return(TRUE);
 }
 
 // -------------------------------------------------
 // Write data
-int Write_WORD_SWAP(WORD Datas)
+int Write_WORD_SWAP(WORD Data)
 {
-    WORD Datas_Swap;
+    WORD Data_Swap;
 
 #ifndef HOST_BIG_ENDIAN
-    Datas_Swap = (Datas & 0xff) << 8;
-    Datas_Swap |= (Datas & 0xff00) >> 8;
+    Data_Swap = (Data & 0xff) << 8;
+    Data_Swap |= (Data & 0xff00) >> 8;
 #else
-    Datas_Swap = Datas;
+    Data_Swap = Data;
 #endif
 
-    return(fwrite(&Datas_Swap, 1, 2, Serv.Output_PTV) == 2);
+    return(fwrite(&Data_Swap, 1, 2, Serv.Output_PTV) == 2);
 }
 
-int Write_DWORD_SWAP(DWORD Datas)
+int Write_DWORD_SWAP(DWORD Data)
 {
-    DWORD Datas_Swap;
+    DWORD Data_Swap;
 
 #ifndef HOST_BIG_ENDIAN
-    Datas_Swap = (Datas & 0xff) << 24;
-    Datas_Swap |= (Datas & 0xff00) << 8;
-    Datas_Swap |= (Datas & 0xff0000) >> 8;
-    Datas_Swap |= (Datas & 0xff000000) >> 24;
+    Data_Swap = (Data & 0xff) << 24;
+    Data_Swap |= (Data & 0xff00) << 8;
+    Data_Swap |= (Data & 0xff0000) >> 8;
+    Data_Swap |= (Data & 0xff000000) >> 24;
 #else
-    Datas_Swap = Datas;
+    Data_Swap = Data;
 #endif
 
-    return(fwrite(&Datas_Swap, 1, 4, Serv.Output_PTV) == 4);
+    return(fwrite(&Data_Swap, 1, 4, Serv.Output_PTV) == 4);
 }
 
-int Write_BYTE(BYTE Datas)
+int Write_BYTE(BYTE Data)
 {
-    return(fwrite(&Datas, 1, 1, Serv.Output_PTV) == 1);
+    return(fwrite(&Data, 1, 1, Serv.Output_PTV) == 1);
 }
 
-int Write_ARRAY(FILE *File, BYTE *Datas, int Size)
+int Write_SIZE(FILE *File, DWORD Data)
 {
-    return((int) fwrite(Datas, 1, Size, File) == Size);
+    DWORD Data_Swap;
+
+#ifndef HOST_BIG_ENDIAN
+    Data_Swap = (Data & 0xff) << 24;
+    Data_Swap |= (Data & 0xff00) << 8;
+    Data_Swap |= (Data & 0xff0000) >> 8;
+    Data_Swap |= (Data & 0xff000000) >> 24;
+#else
+    Data_Swap = Data;
+#endif
+
+    return(fwrite(&Data_Swap, 1, 4, File) == 4);
+}
+
+int Write_ARRAY(FILE *File, BYTE *Data, int Size)
+{
+    return((int) fwrite(Data, 1, Size, File) == Size);
 }
 
 // -------------------------------------------------
-// Retrieve datas from the input file
+// Retrieve Data from the input file
 DWORD Get_DWORD()
 {
-    DWORD Dat = Serv.Input_Mem[Serv.Pos_In_Datas] << 24;
-    Dat |= Serv.Input_Mem[Serv.Pos_In_Datas + 1] << 16;
-    Dat |= Serv.Input_Mem[Serv.Pos_In_Datas + 2] << 8;
-    Dat |= Serv.Input_Mem[Serv.Pos_In_Datas + 3];
-    Serv.Pos_In_Datas += 4;
+    DWORD Dat = Serv.Input_Mem[Serv.Pos_In_Data] << 24;
+    Dat |= Serv.Input_Mem[Serv.Pos_In_Data + 1] << 16;
+    Dat |= Serv.Input_Mem[Serv.Pos_In_Data + 2] << 8;
+    Dat |= Serv.Input_Mem[Serv.Pos_In_Data + 3];
+    Serv.Pos_In_Data += 4;
     return(Dat);
 }
 
 WORD Get_WORD()
 {
-    WORD Dat = Serv.Input_Mem[Serv.Pos_In_Datas] << 8;
-    Dat |= Serv.Input_Mem[Serv.Pos_In_Datas + 1];
-    Serv.Pos_In_Datas += 2;
+    WORD Dat = Serv.Input_Mem[Serv.Pos_In_Data] << 8;
+    Dat |= Serv.Input_Mem[Serv.Pos_In_Data + 1];
+    Serv.Pos_In_Data += 2;
     return(Dat);
 }
 
@@ -261,10 +256,10 @@ int Swap_DWORD()
 {
     DWORD Dat = Get_DWORD();
 
-    Serv.Input_Mem[Serv.Pos_In_Datas + 3 - 4] = (BYTE) (Dat >> 24);
-    Serv.Input_Mem[Serv.Pos_In_Datas + 2 - 4] = (BYTE) (Dat >> 16);
-    Serv.Input_Mem[Serv.Pos_In_Datas + 1 - 4] = (BYTE) (Dat >> 8);
-    Serv.Input_Mem[Serv.Pos_In_Datas - 4] = (BYTE) (Dat & 0xff);
+    Serv.Input_Mem[Serv.Pos_In_Data + 3 - 4] = (BYTE) (Dat >> 24);
+    Serv.Input_Mem[Serv.Pos_In_Data + 2 - 4] = (BYTE) (Dat >> 16);
+    Serv.Input_Mem[Serv.Pos_In_Data + 1 - 4] = (BYTE) (Dat >> 8);
+    Serv.Input_Mem[Serv.Pos_In_Data - 4] = (BYTE) (Dat & 0xff);
     return(Dat);
 }
 
@@ -272,8 +267,8 @@ int Swap_WORD()
 {
     DWORD Dat = Get_WORD();
 
-    Serv.Input_Mem[Serv.Pos_In_Datas + 1 - 2] = (BYTE) (Dat >> 8);
-    Serv.Input_Mem[Serv.Pos_In_Datas - 2] = (BYTE) (Dat & 0xff);
+    Serv.Input_Mem[Serv.Pos_In_Data + 1 - 2] = (BYTE) (Dat >> 8);
+    Serv.Input_Mem[Serv.Pos_In_Data - 2] = (BYTE) (Dat & 0xff);
     return(Dat);
 }
 
@@ -282,51 +277,64 @@ void Get_ARRAY(BYTE *Array, int Len)
     int i = 0;
     while(Len)
     {
-        Array[i] = Serv.Input_Mem[Serv.Pos_In_Datas];
+        Array[i] = Serv.Input_Mem[Serv.Pos_In_Data];
         Len--;
         i++;
-        Serv.Pos_In_Datas++;
+        Serv.Pos_In_Data++;
     }
 }
 
 BYTE Get_BYTE()
 {
-    Serv.Pos_In_Datas++;
-    return(Serv.Input_Mem[Serv.Pos_In_Datas - 1]);
+    Serv.Pos_In_Data++;
+    return(Serv.Input_Mem[Serv.Pos_In_Data - 1]);
 }
 
 void Set_Mem_Ptr(int Position)
 {
-    Serv.Pos_In_Datas = Position;
+    Serv.Pos_In_Data = Position;
 }
 
 int Get_Mem_Ptr()
 {
-    return(Serv.Pos_In_Datas);
+    return(Serv.Pos_In_Data);
 }
 
 void Inc_Mem_Ptr(int Value)
 {
-    Serv.Pos_In_Datas += Value;
+    Serv.Pos_In_Data += Value;
 }
 
 void Dec_Mem_Ptr(int Value)
 {
-    Serv.Pos_In_Datas -= Value;
+    Serv.Pos_In_Data -= Value;
 }
 
 // -------------------------------------------------
 // Pack a sample
-void PackSample(char *Source, int length, int pack, int split)
+int PackSample(char *Source, int length, int pack, int split)
 {
     int Dest_Size;
     char *Pack_Buf;
     char *Empty_Buf;
+    FILE *hFile;
+    char Command[1024];
+    int i;
+    BYTE wDatum;
 
-    Pack_Buf = (char *) malloc(length);
-    Empty_Buf = (char *) malloc(length);
-    memset(Empty_Buf, 0, length);
-    memset(Pack_Buf, 0, length);
+    Pack_Buf = (char *) malloc(length * 2);
+    if(!Pack_Buf)
+    {
+        return(FALSE);
+    }
+    Empty_Buf = (char *) malloc(length * 2);
+    if(!Empty_Buf)
+    {
+        free(Pack_Buf);
+        return(FALSE);
+    }
+    memset(Empty_Buf, 0, length * 2);
+    memset(Pack_Buf, 0, length * 2);
     // Needed for some shitty software
     Source[0] = 0;
     Source[1] = 0;
@@ -337,13 +345,53 @@ void PackSample(char *Source, int length, int pack, int split)
     }
     else
     {
-        Dest_Size = adpcm_coder(Source, Pack_Buf, length);
+        hFile = fopen("sample.raw", "wb");
+        if(hFile)
+        {
+            for(i = 0; i < length; i++)
+            {
+                wDatum = Source[i];
+                fwrite(&wDatum, 1, 2, hFile);
+            }
+            fclose(hFile);
+            // Pack it
+            sprintf(Command, "tools" SEPARATOR "lame -r -t -m m --signed -q 0 -b %d -h sample.raw sample.mp3", Compression_Kbps);
+            if(system(Command) != 0)
+            {
+                free(Pack_Buf);
+                free(Empty_Buf);
+                return(FALSE);
+            }
+            hFile = fopen("sample.mp3", "rb");
+            if(hFile)
+            {
+                fseek(hFile, 0, SEEK_END);
+                Dest_Size = ftell(hFile);
+                fseek(hFile, 0, SEEK_SET);
+                fread(Pack_Buf, 1, Dest_Size, hFile);
+                fclose(hFile);
+            }
+            else
+            {
+                free(Pack_Buf);
+                free(Empty_Buf);
+                return(FALSE);
+            }
+            remove("sample.raw");
+            remove("sample.mp3");
+        }
+        else
+        {
+            free(Pack_Buf);
+            free(Empty_Buf);
+            return(FALSE);
+        }
     }
     if(split)
     {
         if(pack)
         {
-            Write_ARRAY(Serv.Output_SMP, (LPBYTE) Empty_Buf, length - Dest_Size);
+            Write_SIZE(Serv.Output_SMP, Dest_Size);
         }
         Write_ARRAY(Serv.Output_SMP, (LPBYTE) Pack_Buf, Dest_Size);
     }
@@ -351,20 +399,21 @@ void PackSample(char *Source, int length, int pack, int split)
     {
         if(pack)
         {
-            Write_ARRAY(Serv.Output_PTV, (LPBYTE) Empty_Buf, length - Dest_Size);
+            Write_SIZE(Serv.Output_PTV, Dest_Size);
         }
         Write_ARRAY(Serv.Output_PTV, (LPBYTE) Pack_Buf, Dest_Size);
     }
     free(Pack_Buf);
     free(Empty_Buf);
+    return(TRUE);
 }
 
 // -------------------------------------------------
 // Pack a module
 int main(int argc, const char *argv[])
 {
-    int use_packed_samples = FALSE;
-    int split_samples = FALSE;
+    int Use_Packed_Samples = FALSE;
+    int Split_Samples = FALSE;
     int Remap_Fx;
     int i;
     int j;
@@ -374,8 +423,8 @@ int main(int argc, const char *argv[])
     int Nbr_Positions_Even;
     int Restart_Pos;
     int Nbr_Samples = 0;
-    int real_sample_length;
-    int real_sample_loop_length;
+    int Real_Sample_Length;
+    int Real_Sample_Loop_Length;
     LPSAMPLE_INFOS Samples_Infos = NULL;
     int Samples_Used[31];
     BYTE *Positions;
@@ -396,10 +445,13 @@ int main(int argc, const char *argv[])
     char Source_FileName[MAX_PATH];
     char *Mod_Extension;
     int Extension_Pos;
+    int Nbr_Patterns;
+    int Nbr_Patterns_Real;
     int Nbr_Channels;
-    int pos_args;
-
-    printf("ptvpack v1.2b\n");
+    int Pos_Args;
+    int Phony_Pos;
+ 
+    printf("ptvpack v1.3\n");
     printf("Written by hitchhikr of Neural\n");
 
     memset(Used_Fx, 0, sizeof(Used_Fx));
@@ -409,33 +461,37 @@ int main(int argc, const char *argv[])
     if(argc < 2)
     {
 Return_Usage:
-        printf("\nUsage: PtPack [-s] [-p] <Input file.mod>\n\n");
-        printf("          -s: split module into 2 files (patterns / samples)\n");
-        printf("          -p: pack samples with ADPCM\n");
+        printf("\nUsage: ptvpack [-s] [-p <kbps>] <Input file.mod>\n\n");
+        printf("       -s: split module into 2 files (patterns / samples)\n");
+        printf("       -p <kbps>: pack samples with MP3\n");
         return(0);
     }
 
-    pos_args = 1;
+    Pos_Args = 1;
     argc--;
-    while((argc > 0) && argv[pos_args][0] == '-')
+    while((argc > 0) && argv[Pos_Args][0] == '-')
     {
-        switch(toupper(argv[pos_args][1]))
+        switch(toupper(argv[Pos_Args][1]))
         {
             case 'P':
-                use_packed_samples = TRUE;
+                Pos_Args++;
+                argc--;
+                if(argc <= 0) break;
+                Compression_Kbps = atoi(argv[Pos_Args]);
+                Use_Packed_Samples = TRUE;
                 break;
             case 'S':
-                split_samples = TRUE;
+                Split_Samples = TRUE;
                 break;
             default:
                 goto Return_Usage;
         }
         argc--;
-        pos_args++;
+        Pos_Args++;
     }
     if(argc == 1)
     {
-        strcpy(Source_FileName, argv[pos_args]);
+        strcpy(Source_FileName, argv[Pos_Args]);
 
         // Devise the executable name
         memset(Dest_FileName, 0, MAX_PATH);
@@ -472,7 +528,7 @@ Return_Usage:
         }
         else
         {
-            memcpy(Dest_FileName, argv[pos_args], Len_Source_FileName);
+            memcpy(Dest_FileName, argv[Pos_Args], Len_Source_FileName);
         }
         strcat(Dest_FileName, ".ptv");
     }
@@ -481,7 +537,7 @@ Return_Usage:
         goto Return_Usage;
     }
 
-    if(split_samples)
+    if(Split_Samples)
     {
         memcpy(Dest_FileName_Smp, Dest_FileName, MAX_PATH);
         Replace_FileName_Extension(Dest_FileName_Smp, "smp");
@@ -489,18 +545,18 @@ Return_Usage:
 
     if(Load_Input_File(Source_FileName))
     {
-        if(split_samples)
+        if(Split_Samples)
         {
-            printf("\nConverting to %s and %s... ", Dest_FileName, Dest_FileName_Smp);
+            printf("\nConverting to %s and %s...\n", Dest_FileName, Dest_FileName_Smp);
         }
         else
         {
-            printf("\nConverting to %s... ", Dest_FileName);
+            printf("\nConverting to %s...\n", Dest_FileName);
         }
         Serv.Output_PTV = fopen(Dest_FileName, "wb");
         if(Serv.Output_PTV)
         {
-            if(split_samples)
+            if(Split_Samples)
             {
                 Serv.Output_SMP = fopen(Dest_FileName_Smp, "wb");
             }
@@ -545,7 +601,7 @@ Return_Usage:
                     for(i = 0; i < 31; i++)
                     {
                         Cur_Length = Get_WORD();
-                        memcpy(&Instr_Name[i][0], &Serv.Input_Mem[Serv.Pos_In_Datas - 2 - 22], 22);
+                        memcpy(&Instr_Name[i][0], &Serv.Input_Mem[Serv.Pos_In_Data - 2 - 22], 22);
                         Samples_Infos[i].On = TRUE;
                         Samples_Infos[i].Length = Cur_Length;
                         Samples_Infos[i].FineTune = Get_BYTE();
@@ -564,19 +620,31 @@ Return_Usage:
                     Nbr_Positions = Get_BYTE();
                     Restart_Pos = Get_BYTE();                     // Restart
                     Nbr_Patterns = -1;
+                    Nbr_Patterns_Real = -1;
 
                     Positions = (BYTE *) malloc(Nbr_Positions * sizeof(BYTE));
                     memset(Positions, 0, Nbr_Positions * sizeof(BYTE));
 
                     // Positions
-                    for(i = 0; i < Nbr_Positions; i++)
+                    for(i = 0; i < 128; i++)
                     {
-                        Positions[i] = Get_BYTE();
-                        if(Positions[i] > Nbr_Patterns) Nbr_Patterns = Positions[i];
+                        if(i < Nbr_Positions)
+                        {
+                            Positions[i] = Get_BYTE();
+                            if(Positions[i] > Nbr_Patterns) Nbr_Patterns = Positions[i];
+                            if(Positions[i] > Nbr_Patterns_Real) Nbr_Patterns_Real = Positions[i];
+                        }
+                        else
+                        {
+                            // This is or malformed modules w more patterns than reported positions :(
+                            Phony_Pos = Get_BYTE();
+                            if(Phony_Pos > Nbr_Patterns_Real) Nbr_Patterns_Real = Phony_Pos;
+                        }
                     }
 
                     Set_Mem_Ptr(1084);
                     Nbr_Patterns++;
+                    Nbr_Patterns_Real++;
 
                     Patterns = (LPTRACKS) malloc(Nbr_Patterns * sizeof(TRACKS));
                     memset(Patterns, 0, Nbr_Patterns * sizeof(TRACKS));
@@ -600,13 +668,13 @@ Return_Usage:
                                     }
                                 }
                                 Patterns[i].Rows[j].Channel[k].Row_Dat[REF_BLOCK_FX] = (Track_Dat & 0xf00) >> 8;
-                                Patterns[i].Rows[j].Channel[k].Row_Dat[REF_BLOCK_DATAS] = (Track_Dat & 0xff);
+                                Patterns[i].Rows[j].Channel[k].Row_Dat[REF_BLOCK_Data] = (Track_Dat & 0xff);
                             }
                         }
                     }
 
                     // Samples
-                    int Pos_module = (Nbr_Patterns * 64 * 4 * Nbr_Channels) + 1084;
+                    int Pos_module = (Nbr_Patterns_Real * 64 * 4 * Nbr_Channels) + 1084;
                     Set_Mem_Ptr(Pos_module);
                     for(i = 0; i < 31; i++)
                     {
@@ -615,11 +683,11 @@ Return_Usage:
                             Nbr_Samples++;
                             if(Samples_Infos[i].Length)
                             {
-                                Samples_Infos[i].Datas = (char *) malloc((Samples_Infos[i].Length * 2) * sizeof(char));
-                                memset(Samples_Infos[i].Datas, 0, (Samples_Infos[i].Length * 2) * sizeof(char));
+                                Samples_Infos[i].Data = (char *) malloc((Samples_Infos[i].Length * 2) * sizeof(char));
+                                memset(Samples_Infos[i].Data, 0, (Samples_Infos[i].Length * 2) * sizeof(char));
 							    for(j = 0; j < (Samples_Infos[i].Length * 2); j++)
                                 {
-                                    Samples_Infos[i].Datas[j] = Get_BYTE(); 
+                                    Samples_Infos[i].Data[j] = Get_BYTE(); 
                                 }
                             }
                             else
@@ -633,8 +701,8 @@ Return_Usage:
                                     Samples_Infos[i].Length = 8;
                                     Samples_Infos[i].FineTune = 0;
                                     Samples_Infos[i].Volume = 0;
-                                    Samples_Infos[i].Datas = (char *) malloc((8 * 2) * sizeof(char));
-                                    memset(Samples_Infos[i].Datas, 0, (8 * 2) * sizeof(char));
+                                    Samples_Infos[i].Data = (char *) malloc((8 * 2) * sizeof(char));
+                                    memset(Samples_Infos[i].Data, 0, (8 * 2) * sizeof(char));
                                 }
                             }
                         }
@@ -716,7 +784,7 @@ Return_Usage:
                                 if(Remap_Fx == 0)
                                 {
                                     // Arpeggios used
-                                    if(Patterns[i].Rows[j].Channel[k].Row_Dat[REF_BLOCK_DATAS])
+                                    if(Patterns[i].Rows[j].Channel[k].Row_Dat[REF_BLOCK_Data])
                                     {
                                         Used_Fx[Remap_Fx] = TRUE;
                                     }
@@ -739,18 +807,18 @@ Return_Usage:
                                                 break;
 
                                             case 0xb:
-                                                Cmd_Data = Patterns[i].Rows[j].Channel[k].Row_Dat[REF_BLOCK_DATAS];
-                                                Patterns[i].Rows[j].Channel[k].Row_Dat[REF_BLOCK_DATAS] = Cmd_Data - 1;
+                                                Cmd_Data = Patterns[i].Rows[j].Channel[k].Row_Dat[REF_BLOCK_Data];
+                                                Patterns[i].Rows[j].Channel[k].Row_Dat[REF_BLOCK_Data] = Cmd_Data - 1;
                                                 break;
 
                                             case 0xd:
                                                 // Transform the index to hexa
-                                                Cmd_Data = Patterns[i].Rows[j].Channel[k].Row_Dat[REF_BLOCK_DATAS];
+                                                Cmd_Data = Patterns[i].Rows[j].Channel[k].Row_Dat[REF_BLOCK_Data];
                                                 Cmd_Hi = (Cmd_Data >> 4);
                                                 Cmd_Lo = Cmd_Data - (Cmd_Hi << 4);
                                                 Cmd_Data = (Cmd_Hi * 10) + Cmd_Lo;
                                                 if(Cmd_Data > 63) Cmd_Data = 0;
-                                                Patterns[i].Rows[j].Channel[k].Row_Dat[REF_BLOCK_DATAS] = Cmd_Data;
+                                                Patterns[i].Rows[j].Channel[k].Row_Dat[REF_BLOCK_Data] = Cmd_Data;
                                                 break;
                                         }
                                     }
@@ -759,7 +827,7 @@ Return_Usage:
                         }
                     }
 
-                    // Write the fx datas
+                    // Write the fx Data
                     for(k = 0; k < Nbr_Channels; k++)
                     {
                         for(i = 0; i < Nbr_Patterns; i++)
@@ -769,7 +837,7 @@ Return_Usage:
                                 if(Patterns[i].Rows[j].Channel[k].Row_Dat[REF_BLOCK_FX] == 0xe)
                                 {
                                     E_Used = TRUE;
-                                    Remap_Fx = Patterns[i].Rows[j].Channel[k].Row_Dat[REF_BLOCK_DATAS] >> 4;
+                                    Remap_Fx = Patterns[i].Rows[j].Channel[k].Row_Dat[REF_BLOCK_Data] >> 4;
                                     // Need volume slides
                                     if(Remap_Fx == 0xa) Used_Fx[0xa] = TRUE;
                                     if(Remap_Fx == 0xb) Used_Fx[0xa] = TRUE;
@@ -783,10 +851,10 @@ Return_Usage:
                                     {
                                         Used_FineTune
                                             [
-                                                Patterns[i].Rows[j].Channel[k].Row_Dat[REF_BLOCK_DATAS] & 0xf
+                                                Patterns[i].Rows[j].Channel[k].Row_Dat[REF_BLOCK_Data] & 0xf
                                             ] = TRUE;
                                     }
-                                    // USe retrig stuff for notes delay too
+                                    // Use retrig stuff for notes delay too
                                     if(Remap_Fx == 0xd) Used_Sub_Fx[0x9] = TRUE;
                                 }
                             }
@@ -801,7 +869,7 @@ Return_Usage:
                     if(constout)
                     {
                         if(E_Used) fprintf(constout, "PTV_EXTEND equ 1\n");
-                        if(use_packed_samples) fprintf(constout, "PTV_PACKED_SMP equ 1\n");
+                        if(Use_Packed_Samples) fprintf(constout, "PTV_PACKED_SMP equ 1\n");
                         for(i = 0; i < 16; i++)
                         {
                             if(Used_Fx[i])
@@ -822,6 +890,7 @@ Return_Usage:
                                 }
                             }
                         }
+                        // no finetune index 0
                         for(i = 1; i < 16; i++)
                         {
                             if(Used_FineTune[i])
@@ -860,7 +929,6 @@ Return_Usage:
                         }
                     }
 
-                    // Write the signature
                     int Found_Note;
 
                     // Transform the Notes
@@ -921,11 +989,11 @@ Return_Usage:
                     {
                         if(Samples_Used[i])
                         {
-                            real_sample_length = Samples_Infos[i].Length;
-                            real_sample_loop_length = (Samples_Infos[i].Repeat_Start + Samples_Infos[i].Repeat_Length);
-                            if(real_sample_loop_length >= 2) if(real_sample_loop_length < real_sample_length) real_sample_length = real_sample_loop_length;
+                            Real_Sample_Length = Samples_Infos[i].Length;
+                            Real_Sample_Loop_Length = (Samples_Infos[i].Repeat_Start + Samples_Infos[i].Repeat_Length);
+                            if(Real_Sample_Loop_Length >= 2) if(Real_Sample_Loop_Length < Real_Sample_Length) Real_Sample_Length = Real_Sample_Loop_Length;
 
-                            Write_DWORD_SWAP(real_sample_length);
+                            Write_DWORD_SWAP(Real_Sample_Length * (Use_Packed_Samples ? 1 : 1));
                             Write_BYTE(Samples_Infos[i].FineTune);
                             Write_BYTE(Samples_Infos[i].Volume);
                             if(Samples_Infos[i].Repeat_Length == 1)
@@ -934,9 +1002,9 @@ Return_Usage:
                             }
                             else
                             {
-                                Write_DWORD_SWAP(Samples_Infos[i].Repeat_Start);
+                                Write_DWORD_SWAP(Samples_Infos[i].Repeat_Start * (Use_Packed_Samples ? 1 : 1));
                             }
-                            Write_DWORD_SWAP(Samples_Infos[i].Repeat_Length);
+                            Write_DWORD_SWAP(Samples_Infos[i].Repeat_Length * (Use_Packed_Samples ? 1 : 1));
                             // Pad to 16 bytes
                             Write_WORD_SWAP(0);
                         }
@@ -954,7 +1022,7 @@ Return_Usage:
                         Write_BYTE(0);
                     }
                     
-                    // Patterns Datas
+                    // Patterns Data
                     for(k = 0; k < Nbr_Channels; k++)
                     {
                         for(i = 0; i < Nbr_Patterns; i++)
@@ -990,40 +1058,43 @@ Return_Usage:
                             }
                         }
                     }
-                    // Write the fx datas
+                    // Write the fx Data
                     for(k = 0; k < Nbr_Channels; k++)
                     {
                         for(i = 0; i < Nbr_Patterns; i++)
                         {
                             for(j = 0; j < 64; j++)
                             {
-                                Write_BYTE(Patterns[i].Rows[j].Channel[k].Row_Dat[REF_BLOCK_DATAS]);
+                                Write_BYTE(Patterns[i].Rows[j].Channel[k].Row_Dat[REF_BLOCK_Data]);
                             }
                         }
                     }
 
-                    if(use_packed_samples)
+                    if(Use_Packed_Samples)
                     {
-                        printf("done.");
-                        printf("\nPacking samples... ");
+                        printf("done.\n");
+                        printf("Packing samples...\n");
                     }
     			    // Pack the samples
                     for(i = 0; i < 31; i++)
                     { 
                         if(Samples_Used[i])
                         {
-                            real_sample_length = Samples_Infos[i].Length;
-                            if(real_sample_length >= 2)
+                            Real_Sample_Length = Samples_Infos[i].Length;
+                            if(Real_Sample_Length >= 2)
                             {
-                                real_sample_loop_length = (Samples_Infos[i].Repeat_Start + Samples_Infos[i].Repeat_Length);
-                                if(real_sample_loop_length >= 2)
+                                Real_Sample_Loop_Length = (Samples_Infos[i].Repeat_Start + Samples_Infos[i].Repeat_Length);
+                                if(Real_Sample_Loop_Length >= 2)
                                 {
-                                    if(real_sample_loop_length < real_sample_length) real_sample_length = real_sample_loop_length;
+                                    if(Real_Sample_Loop_Length < Real_Sample_Length) Real_Sample_Length = Real_Sample_Loop_Length;
                                 }
-                                Samples_Infos[i].Length = real_sample_length;
+                                Samples_Infos[i].Length = Real_Sample_Length;
                                 // Convert to bytes
-                                real_sample_length *= 2;
-                                PackSample(Samples_Infos[i].Datas, real_sample_length, use_packed_samples, split_samples);
+                                Real_Sample_Length *= 2;
+                                if(PackSample(Samples_Infos[i].Data, Real_Sample_Length, Use_Packed_Samples, Split_Samples) == FALSE)
+                                {
+                                    break;
+                                }
                             }
                         }
                     }
@@ -1036,12 +1107,15 @@ Return_Usage:
                 free(Blocks[REF_BLOCK_NOTES]);
                 free(Blocks[REF_BLOCK_INSTR]);
                 free(Blocks[REF_BLOCK_FX]);
-                free(Blocks[REF_BLOCK_DATAS]);
+                free(Blocks[REF_BLOCK_Data]);
                 free(Samples_Envelope);
 
                 for(i = 0; i < 31; i++)
                 {
-                    free(Samples_Infos[i].Datas);
+                    if(Samples_Infos[i].Data)
+                    {
+                        free(Samples_Infos[i].Data);
+                    }
                 }
                 free(Positions);
                 free(Patterns);
@@ -1052,7 +1126,7 @@ Return_Usage:
             Print_Error(ERR_CREATEFILE);
         }
     }
-    Free_Stuff(split_samples);
+    Free_Stuff(Split_Samples);
     if(There_Was_Error) return(1);
     else printf("done.\n");
     return(0);
