@@ -57,6 +57,6 @@ ptv_replay:                 include "replay/replay.asm"
 ; (only the samples need to be located in chipram if splitted from patterns)
                             section ptv_test,data_c
 
-ptv_data:                   incbin  "cattle banger.ptv"
+ptv_data:                   incbin  "jest.ptv"
 
                             end
