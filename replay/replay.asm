@@ -1,5 +1,5 @@
 ; --------------------------------------------
-; ptvpack v1.3b - Replay routine
+; ptvpack v1.3c - Replay routine
 ; Written by hitchhikr / Neural
 ; Based on the original protracker replay.
 
@@ -198,7 +198,10 @@ ptv_depack_samples:
                             movem.l d0/d1/d7/a0/a1/a2/a3/a4/a5/a6,-(a7)
                             movem.l d0/a0,-(a7)
                             move.l  (a6),d0
-                            lsl.l   #4,d0
+                            add.l   d0,d0
+                            move.l  d0,d5
+                            add.l   #1105,d5
+                            add.l   d0,d0
                             move.l  4.w,a6
                             move.l  #$10002,d1
                             jsr     _LVOAllocMem(a6)
@@ -257,6 +260,9 @@ ptv_depack_samples:
                             addq.l  #2,a3
 .no_write:
                             addq.l  #1,d7
+                            ; reached the end
+                            cmp.l   d5,d7
+                            beq     .stop_decode
                             subq.l  #1,d0
                             bne     .copy_frame
                             move.l  a3,(a7)
@@ -387,7 +393,7 @@ ptv_end:
 .free_samples:
                             move.l  (a2)+,a1
                             move.l  (a3),d0
-                            lsl.l   #4,d0
+                            lsl.l   #2,d0
                             jsr     _LVOFreeMem(a6)
                             lea     16(a3),a3
                             dbf     d7,.free_samples
