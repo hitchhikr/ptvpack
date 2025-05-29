@@ -1,5 +1,5 @@
 ; --------------------------------------------
-; ptvpack v1.3 - Replay routine
+; ptvpack v1.3b - Replay routine
 ; Written by hitchhikr / Neural
 ; Based on the original protracker replay.
 
@@ -225,6 +225,8 @@ ptv_depack_samples:
                             movem.l (a7)+,d0/a0
                             move.l  a3,-(a7)
                             move.l  a3,-(a7)
+                            tst.l   mpegabase(pc)
+                            beq     .no_mpega
                             lea     smpname(pc),a0
                             lea     mpa_ctrl(pc),a1
                             move.l  mpegabase(pc),a6
@@ -265,6 +267,7 @@ ptv_depack_samples:
                             move.l  mp3stream(pc),a0
                             move.l  mpegabase(pc),a6
                             jsr     _LVOMPEGA_close(a6)
+.no_mpega:
                             ; delete the file from the RAM:
                             move.l  dosbase(pc),a6
                             lea     smpname(pc),a0
@@ -394,8 +397,11 @@ ptv_end:
                             move.l  #MPEGA_PCM_SIZE,d0
                             move.l  pcm_buffers(pc),a1
                             jsr     _LVOFreeMem(a6)
+                            tst.l   mpegabase(pc)
+                            beq     .no_mpega
                             move.l  mpegabase(pc),a1
                             jsr     _LVOCloseLibrary(a6)
+.no_mpega:
                             move.l  dosbase(pc),a1
                             jsr     _LVOCloseLibrary(a6)
     endc

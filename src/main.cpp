@@ -1,5 +1,5 @@
 // -------------------------------------------------
-// ptvpack v1.3
+// ptvpack v1.3b
 // Written by Franck 'hitchhikr' Charlet.
 
 // -------------------------------------------------
@@ -451,7 +451,7 @@ int main(int argc, const char *argv[])
     int Pos_Args;
     int Phony_Pos;
  
-    printf("ptvpack v1.3\n");
+    printf("ptvpack v1.3b\n");
     printf("Written by hitchhikr of Neural\n");
 
     memset(Used_Fx, 0, sizeof(Used_Fx));

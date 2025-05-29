@@ -1,5 +1,5 @@
 ; --------------------------------------------
-; ptvpack v1.2 - Replay routine tester
+; ptvpack v1.3b - Replay routine tester
 ; Written by hitchhikr / Neural
 
 ; --------------------------------------------
